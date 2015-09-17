@@ -70,6 +70,11 @@
 
 #include "arduino.h"
 #include "SGL.h"
+#include <SPI.h>
+
+// Teensy 3.1 can only generate 30 MHz SPI when running at 120 MHz (overclock)
+// At all other speeds, SPI.beginTransaction() will use the fastest available clock
+#define SPICLOCK 30000000
 
 #define RGB_OLED_WIDTH                      96
 #define RGB_OLED_HEIGHT                     64
@@ -158,35 +163,15 @@ enum ScollingDirection{
 class SSD1331_t3 : public virtual SGL {
  public:
 	SSD1331_t3(uint8_t _CS, uint8_t _DC, uint8_t _RST = 255, uint8_t _MOSI=11, uint8_t _SCLK=13);
+
 	void begin(void);
 	void drawPixel(uint16_t x, uint16_t y, uint16_t color);
 
-  /* Delay-free 'unsafe' versions */
-  int16_t drawLine_nodelay(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
-  int16_t drawRectangle_nodelay(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color);
-  int16_t drawFrame_nodelay(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t outColor, uint16_t fillColor);
-  int16_t fillRectangle_nodelay(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) __attribute__((always_inline)) {
-    return drawFrame_nodelay(x, y, x + w - 1, y + h - 1, color, color);
-  }
-
-  /* Custom SSD1331 extensions */
-  void copyWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,uint16_t x2, uint16_t y2);
-  void dimWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-  void clearWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-  void setScolling(ScollingDirection direction, uint8_t rowAddr, uint8_t rowNum, uint8_t timeInterval);
-  void enableScolling(bool enable);
-  void setDisplayMode(DisplayMode mode);
-  void setDisplayPower(DisplayPower power);
-
-  /* fully 'safe' functions w/ built-in delayMicroseconds */
-
   void fillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) __attribute__((always_inline)) {
-    delayMicroseconds(fillRectangle_nodelay(x, y, w, h, color));
+    _drawFrame(x, y, x + w - 1, y + h - 1, color, color, true);
   }
 
-  void drawLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color) __attribute__((always_inline)) {
-    delayMicroseconds(drawLine_nodelay(x0, y0, x1, y1, color));
-  }
+  void drawLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
 
   void drawVerticalLine(uint16_t x, uint16_t y, uint16_t height,uint16_t color) __attribute__((always_inline)) {
     drawLine(x, y, x, y + height - 1, color);
@@ -197,24 +182,29 @@ class SSD1331_t3 : public virtual SGL {
   }
 
   void drawRectangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color) __attribute__((always_inline)) {
-    delayMicroseconds(drawRectangle_nodelay(x0, y0, x1, y1, color));
+    _drawFrame(x0, y0, x1, y1, color, 0, false);
   }
 
   void drawFrame(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t outColor, uint16_t fillColor) __attribute__((always_inline)) {
-    delayMicroseconds(drawFrame_nodelay(x0, y0, x1, y1, outColor, fillColor));
+    _drawFrame(x0, y0, x1, y1, outColor, fillColor, true);
   }
+  
+  /* Custom SSD1331 extensions */
+  void copyWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,uint16_t x2, uint16_t y2);
+  void dimWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+  void clearWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+  void setScolling(ScollingDirection direction, uint8_t rowAddr, uint8_t rowNum, uint8_t timeInterval);
+  void enableScolling(bool enable);
+  void setDisplayMode(DisplayMode mode);
+  void setDisplayPower(DisplayPower power);
 
  protected:
 
   uint8_t  _rst, _cs, _dc, _mosi, _sclk;
 	uint8_t pcs_data, pcs_command;
+  elapsedMicros safeDelay;
 
-	void setAddr(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1)
-	  __attribute__((always_inline)) {
-    writecommand16_cont_split(CMD_SET_COLUMN_ADDRESS, x0);
-    writecommand16_cont_split(x1, CMD_SET_ROW_ADDRESS);
-    writecommand16_last_split(y0, y1);
-	}
+  void _drawFrame(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t outColor, uint16_t fillColor, bool filled);
 
 	//void waitFifoNotFull(void) __attribute__((always_inline)) {
 	void waitFifoNotFull(void) {
@@ -306,6 +296,17 @@ class SSD1331_t3 : public virtual SGL {
 		KINETISK_SPI0.PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_EOQ;
 		waitTransmitComplete(mcr);
 	}
+  
+  void spi_begin(void) __attribute__((always_inline)) {
+    unsigned long mask = (~(0UL) ^ (~(0UL) >> 1));
+    while (safeDelay & mask) { ; }
+    SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
+  }
+
+  void spi_end(int16_t delayNeeded) __attribute__((always_inline)) {
+    SPI.endTransaction();
+    safeDelay = -delayNeeded;
+  }
 };
 
 #endif

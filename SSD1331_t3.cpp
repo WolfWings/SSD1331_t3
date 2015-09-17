@@ -66,11 +66,6 @@
 // https://github.com/WolfWings/SSD1331_t3
 
 #include "SSD1331_t3.h"
-#include <SPI.h>
-
-// Teensy 3.1 can only generate 30 MHz SPI when running at 120 MHz (overclock)
-// At all other speeds, SPI.beginTransaction() will use the fastest available clock
-#define SPICLOCK 30000000
 
 // The "CS" pin is called "OC" on the AdaFruit OLED + MicroSD breakout
 SSD1331_t3::SSD1331_t3(uint8_t cs, uint8_t dc, uint8_t rst, uint8_t mosi, uint8_t sclk) : SGL(RGB_OLED_WIDTH, RGB_OLED_HEIGHT)
@@ -110,34 +105,33 @@ void SSD1331_t3::begin(void) {
   uint8_t count;
 
   // verify SPI pins are valid;
-  if ((_mosi == 11 || _mosi == 7) && (_sclk == 13 || _sclk == 14)) {
-    SPI.setMOSI(_mosi);
-    SPI.setSCK(_sclk);
-	} else {
-    return; // not valid pins...
-	}
-  
-	SPI.begin();
-	if (SPI.pinIsChipSelect(_cs, _dc)) {
-		pcs_data = SPI.setCS(_cs);
-		pcs_command = pcs_data | SPI.setCS(_dc);
-	} else {
-		pcs_data = 0;
-		pcs_command = 0;
-		return;
-	}
+  if ((_mosi != 11) && (_mosi !=  7)) { return; }
+  if ((_sclk != 13) && (_sclk != 14)) { return; }
+
+  SPI.setMOSI(_mosi);
+  SPI.setSCK(_sclk);
+
+  SPI.begin();
+  if (!(SPI.pinIsChipSelect(_cs, _dc))) {
+    pcs_data = 0;
+    pcs_command = 0;
+    return;
+  }
+  pcs_data = SPI.setCS(_cs);
+  pcs_command = pcs_data | SPI.setCS(_dc);
 
   // Toggle the RST pin if requested on startup.
-	if (_rst < 255) {
-		pinMode(_rst, OUTPUT);
-		digitalWrite(_rst, HIGH);
-		delayMicroseconds(3);
-		digitalWrite(_rst, LOW);
-		delayMicroseconds(3);
-		digitalWrite(_rst, HIGH);
-	}
+  if (_rst < 255) {
+    pinMode(_rst, OUTPUT);
+    digitalWrite(_rst, HIGH);
+    delayMicroseconds(3);
+    digitalWrite(_rst, LOW);
+    delayMicroseconds(3);
+    digitalWrite(_rst, HIGH);
+  }
 
-	SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
+  safeDelay = 0;
+  spi_begin();
   if (items & 1) {
     writecommand8_cont(init_commands[0]);
   }
@@ -145,118 +139,163 @@ void SSD1331_t3::begin(void) {
     writecommand16_cont_split(init_commands[count], init_commands[count + 1]);
   }
   writecommand8_last(CMD_NORMAL_BRIGHTNESS_DISPLAY_ON);
-	SPI.endTransaction();
+  spi_end(0);
 }
 
 void SSD1331_t3::drawPixel(uint16_t x, uint16_t y, uint16_t color) {
-	if((x >= RGB_OLED_WIDTH) || (y >= RGB_OLED_HEIGHT)) return;
+	if ((x >= RGB_OLED_WIDTH) || (y >= RGB_OLED_HEIGHT)) return;
 
-  SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
-  setAddr(x, y, RGB_OLED_WIDTH - 1, RGB_OLED_HEIGHT - 1);
+  spi_begin();
+  writecommand16_cont_split(CMD_SET_COLUMN_ADDRESS, x);
+  writecommand16_cont_split(RGB_OLED_WIDTH - 1, CMD_SET_ROW_ADDRESS);
+  writecommand16_cont_split(y, RGB_OLED_HEIGHT - 1);
   writedata16_last(color);
-  SPI.endTransaction();
+  spi_end(0);
 }
 
-int16_t SSD1331_t3::drawLine_nodelay(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color) {
+void SSD1331_t3::drawLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color) {
   int16_t xd, yd, delayNeeded;
 
-  SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
-  if (x0 >= RGB_OLED_WIDTH)  return 0;
-  writecommand16_cont_split(CMD_DRAW_LINE, x0);
-  if (y0 >= RGB_OLED_HEIGHT) return 0;
-  if (x1 >= RGB_OLED_WIDTH)  return 0;
-  writecommand16_cont_split(y0, x1);
-  if (y1 >= RGB_OLED_HEIGHT) return 0;
+  /* */ spi_begin();
+
+  if (x0 >= RGB_OLED_WIDTH)  x0 = RGB_OLED_WIDTH - 1;
+  if (y0 >= RGB_OLED_HEIGHT) y0 = RGB_OLED_HEIGHT - 1;
+
+  /* */ writecommand16_cont_split(CMD_DRAW_LINE, x0);
+
+  if (x1 >= RGB_OLED_WIDTH)  x1 = RGB_OLED_WIDTH - 1;
+  if (y1 >= RGB_OLED_HEIGHT) y1 = RGB_OLED_HEIGHT - 1;
+
+  /* */ writecommand16_cont_split(y0, x1);
+
   xd = (x1 - x0);
-  writecommand16_cont_split(y1, (color & 0xF800) >> 11);
-  if (xd < 0) { xd = -xd; }
+  xd = (xd >= 0) ? xd : -xd;
+
+  /* */ writecommand16_cont_split(y1, (color & 0xF800) >> 11);
+
   yd = (y1 - y0);
-  if (yd < 0) { yd = -yd; }
-  delayNeeded = (((xd > yd) ? xd : yd) / 16);
-  writecommand16_last_split((color & 0x03E0) >> 5, color & 0x001F);
-  SPI.endTransaction();
-  return delayNeeded;
+  yd = (yd >= 0) ? yd : -yd;
+
+  /* */ writecommand16_last_split((color & 0x03E0) >> 5, color & 0x001F);
+
+  delayNeeded = ((xd > yd) ? xd : yd) / 16;
+
+  /* */ spi_end(delayNeeded);
 }
 
-int16_t SSD1331_t3::drawRectangle_nodelay(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color) {
+void SSD1331_t3::_drawFrame(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t outColor, uint16_t fillColor, bool filled) {
   int16_t xd, yd, delayNeeded;
 
-  SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
-  writecommand16_cont_split(CMD_FILL_WINDOW, DISABLE_FILL);
+  /* */ spi_begin();
+  /* */ writecommand16_cont_split(CMD_FILL_WINDOW, filled ? ENABLE_FILL : DISABLE_FILL);
+
   if (x0 >= RGB_OLED_WIDTH)  x0 = RGB_OLED_WIDTH - 1;
   if (y0 >= RGB_OLED_HEIGHT) y0 = RGB_OLED_HEIGHT - 1;
-  writecommand16_cont_split(CMD_DRAW_RECTANGLE, x0);
+
+  /* */ writecommand16_cont_split(CMD_DRAW_RECTANGLE, x0);
+
   if (x1 >= RGB_OLED_WIDTH)  x1 = RGB_OLED_WIDTH - 1;
   if (y1 >= RGB_OLED_HEIGHT) y1 = RGB_OLED_HEIGHT - 1;
-  writecommand16_cont_split(y0, x1);
-  xd = x1 - x0;
-  yd = y1 - y0;
-  writecommand16_cont_split(y1, (color & 0xF800) >> 11);
-  if (xd < 0) { xd = -xd; }
-  if (yd < 0) { yd = -yd; }
-  writecommand16_cont_split((color & 0x3E0) >> 5, color & 0x1F);
-  delayNeeded = ((xd + 1) * (yd + 1));
-  writecommand16_cont_split(0, 0);
-  delayNeeded = (delayNeeded / 16) - 32;
-  if (delayNeeded < 0) {
-    delayNeeded = 0;
-  }
-  writecommand8_last(0);
-  SPI.endTransaction();
-  return delayNeeded;
-}
 
-int16_t SSD1331_t3::drawFrame_nodelay(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t outColor, uint16_t fillColor) {
-  int16_t xd, yd, delayNeeded;
+  /* */ writecommand16_cont_split(y0, x1);
 
-  SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
-  writecommand16_cont_split(CMD_FILL_WINDOW, ENABLE_FILL);
-  if (x0 >= RGB_OLED_WIDTH)  x0 = RGB_OLED_WIDTH - 1;
-  if (y0 >= RGB_OLED_HEIGHT) y0 = RGB_OLED_HEIGHT - 1;
-  writecommand16_cont_split(CMD_DRAW_RECTANGLE, x0);
-  if (x1 >= RGB_OLED_WIDTH)  x1 = RGB_OLED_WIDTH - 1;
-  if (y1 >= RGB_OLED_HEIGHT) y1 = RGB_OLED_HEIGHT - 1;
-  writecommand16_cont_split(y0, x1);
-  xd = x1 - x0;
-  yd = y1 - y0;
-  writecommand16_cont_split(y1, (outColor & 0xF800) >> 11);
-  if (xd < 0) { xd = -xd; }
-  if (yd < 0) { yd = -yd; }
-  writecommand16_cont_split((outColor & 0x3E0) >> 5, outColor & 0x1F);
-  delayNeeded = ((xd + 1) * (yd + 1));
-  writecommand16_cont_split((fillColor & 0xF800) >> 11, (fillColor & 0x03E0) >> 5);
-  delayNeeded = (delayNeeded / 16) - 32;
-  if (delayNeeded < 0) {
-    delayNeeded = 0;
-  }
-  writecommand8_last(fillColor & 0x1F);
-  SPI.endTransaction();
-  return delayNeeded;
+  xd = (x1 - x0);
+  xd = (xd >= 0) ? xd : -xd;
+
+  /* */ writecommand16_cont_split(y1, (outColor & 0xF800) >> 11);
+
+  yd = (y1 - y0);
+  yd = (yd >= 0) ? yd : -yd;
+
+  /* */ writecommand16_cont_split((outColor & 0x3E0) >> 5, outColor & 0x1F);
+
+  delayNeeded = ((xd + 1) * (yd + 1)) / 16;
+
+  /* */ writecommand16_cont_split((fillColor & 0xF800) >> 11, (fillColor & 0x03E0) >> 5);
+  /* */ writecommand8_last(fillColor & 0x1F);
+  /* */ spi_end(delayNeeded);
 }
 
 void SSD1331_t3::copyWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,uint16_t x2, uint16_t y2) {
-	SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
-  writecommand8_cont(CMD_COPY_WINDOW);
-  writecommand16_cont_split(x0, y0);
-  writecommand16_cont_split(x1, y1);
-  writecommand16_last_split(x2, y2);
-  SPI.endTransaction();
+  int16_t xd, yd, delayNeeded;
+
+	/* */ spi_begin();
+  /* */ writecommand8_cont(CMD_COPY_WINDOW);
+
+  if (x0 >= RGB_OLED_WIDTH)  x0 = RGB_OLED_WIDTH - 1;
+  if (y0 >= RGB_OLED_HEIGHT) y0 = RGB_OLED_HEIGHT - 1;
+
+  /* */ writecommand16_cont_split(x0, y0);
+
+  if (x1 >= RGB_OLED_WIDTH)  x1 = RGB_OLED_WIDTH - 1;
+  if (y1 >= RGB_OLED_HEIGHT) y1 = RGB_OLED_HEIGHT - 1;
+
+  /* */ writecommand16_cont_split(x1, y1);
+
+  xd = (x1 - x0);
+  xd = (xd >= 0) ? xd : -xd;
+
+  /* */ writecommand16_last_split(x2, y2);
+
+  yd = (y1 - y0);
+  yd = (yd >= 0) ? yd : -yd;
+  delayNeeded = ((xd + 1) * (yd + 1)) / 8;
+
+  /* */ spi_end(delayNeeded);
 }
 
 void SSD1331_t3::dimWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-	SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
-  writecommand8_cont(CMD_DIM_WINDOW);
-  writecommand16_cont_split(x0, y0);
-  writecommand16_last_split(x1, y1);
-  SPI.endTransaction();
+  int16_t xd, yd, delayNeeded;
+
+	/* */ spi_begin();
+
+  if (x0 >= RGB_OLED_WIDTH)  x0 = RGB_OLED_WIDTH - 1;
+  if (y0 >= RGB_OLED_HEIGHT) y0 = RGB_OLED_HEIGHT - 1;
+
+  /* */ writecommand8_cont(CMD_DIM_WINDOW);
+
+  if (x1 >= RGB_OLED_WIDTH)  x1 = RGB_OLED_WIDTH - 1;
+  if (y1 >= RGB_OLED_HEIGHT) y1 = RGB_OLED_HEIGHT - 1;
+
+  /* */ writecommand16_cont_split(x0, y0);
+
+  xd = (x1 - x0);
+  xd = (xd >= 0) ? xd : -xd;
+
+  /* */ writecommand16_last_split(x1, y1);
+
+  yd = (y1 - y0);
+  yd = (yd >= 0) ? yd : -yd;
+  delayNeeded = ((xd + 1) * (yd + 1)) / 8;
+
+  /* */ spi_end(delayNeeded);
 }
 
 void SSD1331_t3::clearWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-	SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
-  writecommand8_cont(CMD_CLEAR_WINDOW);
-  writecommand16_cont_split(x0, y0);
-  writecommand16_last_split(x1, y1);
-  SPI.endTransaction();
+  int16_t xd, yd, delayNeeded;
+
+	/* */ spi_begin();
+
+  if (x0 >= RGB_OLED_WIDTH)  x0 = RGB_OLED_WIDTH - 1;
+  if (y0 >= RGB_OLED_HEIGHT) y0 = RGB_OLED_HEIGHT - 1;
+
+  /* */ writecommand8_cont(CMD_CLEAR_WINDOW);
+
+  if (x1 >= RGB_OLED_WIDTH)  x1 = RGB_OLED_WIDTH - 1;
+  if (y1 >= RGB_OLED_HEIGHT) y1 = RGB_OLED_HEIGHT - 1;
+
+  /* */ writecommand16_cont_split(x0, y0);
+
+  xd = (x1 - x0);
+  xd = (xd >= 0) ? xd : -xd;
+
+  /* */ writecommand16_last_split(x1, y1);
+
+  yd = (y1 - y0);
+  yd = (yd >= 0) ? yd : -yd;
+  delayNeeded = ((xd + 1) * (yd + 1)) / 16;
+
+  /* */ spi_end(delayNeeded);
 }
 
 void SSD1331_t3::setScolling(ScollingDirection direction, uint8_t rowAddr, uint8_t rowNum, uint8_t timeInterval) {
@@ -280,32 +319,33 @@ void SSD1331_t3::setScolling(ScollingDirection direction, uint8_t rowAddr, uint8
       scrolling_vertical = 0x00;
       break;
   }
-	SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
+
+	spi_begin();
   writecommand16_cont_split(CMD_CONTINUOUS_SCROLLING_SETUP, scrolling_horizontal);
   writecommand16_cont_split(rowAddr, rowNum);
   writecommand16_cont_split(scrolling_vertical, timeInterval);
   writecommand8_last(CMD_ACTIVE_SCROLLING);
-  SPI.endTransaction();
+  spi_end(0);
 }
 
 void SSD1331_t3::enableScolling(bool enable) {
-	SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
+	spi_begin();
   if (enable) {
     writecommand8_last(CMD_ACTIVE_SCROLLING);
   } else {
     writecommand8_last(CMD_DEACTIVE_SCROLLING);
   }
-  SPI.endTransaction();
+  spi_end(0);
 }
 
 void SSD1331_t3::setDisplayMode(DisplayMode mode) {
-	SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
+	spi_begin();
   writecommand8_last(mode);
-  SPI.endTransaction();
+  spi_end(0);
 }
 
 void SSD1331_t3::setDisplayPower(DisplayPower power) {
-	SPI.beginTransaction(SPISettings(SPICLOCK, MSBFIRST, SPI_MODE0));
+	spi_begin();
   writecommand8_last(power);
-  SPI.endTransaction();
+  spi_end(0);
 }
