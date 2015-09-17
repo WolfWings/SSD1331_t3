@@ -166,7 +166,7 @@ class SSD1331_t3 : public virtual SGL {
   int16_t drawRectangle_nodelay(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color);
   int16_t drawFrame_nodelay(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t outColor, uint16_t fillColor);
   int16_t fillRectangle_nodelay(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) __attribute__((always_inline)) {
-    return drawFrame_nodelay(x, y, x + w, y + h, color, color);
+    return drawFrame_nodelay(x, y, x + w - 1, y + h - 1, color, color);
   }
 
   /* Custom SSD1331 extensions */
