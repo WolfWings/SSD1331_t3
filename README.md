@@ -49,6 +49,8 @@ Scrolling
     void enableScolling(bool enable);
     void setDisplayMode(DisplayMode mode);
     void setDisplayPower(DisplayPower power);
+    void drawCallbackPixels(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,
+        uint16 *callback(uint16_t x, uint16_t y, void *state), void *state);
 
 All other functionality present the in [SGL (Seeed Graphics Library)](https://github.com/Seeed-Studio/SGL) is present and available, the above only documents functionality natively re-implemented to take advantage of the hardware acceleration present in the SSD1331 chipset.
 
