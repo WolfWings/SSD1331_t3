@@ -4,8 +4,7 @@ This is a library for the 0.96" 16-bit Color OLED with SSD1331 driver chip, opti
   Pick one up today in the adafruit shop!
   ------> http://www.adafruit.com/products/684
 
-These displays use SPI to communicate, 4 or 5 pins are required to  
-interface
+These displays use SPI to communicate, 5 pins are required with this library to interface due to the 'RST' pin generally needing to be pulled low for 3μs but kept high otherwise, and the separate 'command/data' pin used to allow for faster bitmap image uploads, as well as the dedicated and normal 'Chip Select/Slave Select' pin used by SPI as a whole.
 
 Adafruit invests time and resources providing this open source code, 
 please support Adafruit and open-source hardware by purchasing 
@@ -16,11 +15,11 @@ BSD license, check license.txt for more information
 All text above must be included in any redistribution
 
 ### Introduction
-It is a 16 bit 96*64 dot matrix OLED display module with RGB color. RGB OLED 96*64 is based on SSD1331 module which is a single chip CMOS OLED/PLED driver with 288 segments and 64 common output, supporting up to 96RGB * 64 dot matrix display. It use SPI for communication.
+The SSD1331 is a 16 bit 96*64 dot matrix OLED display module with RGB color based on the SSD1331 module; this is a single chip CMOS OLED/PLED driver with 288 segments and 64 common output, supporting up to 96 * 64 RGB dot matrix display. It uses SPI for communication.
 
 ### Feature
-+ Resolution: 96RGB * 64 dot matrix panel
-+ 65k color depth supported by embedded 96*64*16 bit GDDRAM display buffer
++ Resolution: 96 * 64 RGB dot matrix panel
++ 65k (5:6:5) color depth supported by embedded 96*64*16 bit GDDRAM display buffer
 + Graphic Accelerating Command (GAC) set with Continuous Horizontal, Vertical and Diagonal 
 Scrolling
 + Programmable Frame Rate
@@ -28,16 +27,20 @@ Scrolling
 ### Interface
 ***Init the RGB OLED***
 
-    void init(void);
+    void begin(void);
 
-***Draw Graphics***
+***Accelerated Graphics Operations***
 
     void drawPixel(uint16_t x, uint16_t y, uint16_t color);
     void drawLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
+    void drawVerticalLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
+    void drawHorizontalLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
+    void drawRectangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
     void drawFrame(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t outColor, uint16_t fillColor);
+    void fillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
     ……    
 
-***Other Funny Interface***
+***Hardware Specific Operations/Extensions***
 
     void copyWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,uint16_t x2, uint16_t y2);
     void dimWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
@@ -47,11 +50,13 @@ Scrolling
     void setDisplayMode(DisplayMode mode);
     void setDisplayPower(DisplayPower power);
 
+All other functionality present the in [SGL (Seeed Graphics Library)](https://github.com/Seeed-Studio/SGL) is present and available, the above only documents functionality natively re-implemented to take advantage of the hardware acceleration present in the SSD1331 chipset.
+
 ### Getting Started
 Please take the example sketches in examples folder as reference, have fun!
 
 ----
-This software is based on Adafruit's SSD1331 OLED Driver library and modified by lawliet zou [wei.zou@seeedstudio.com](wei.zou@seeedstudio.com) for seeed studio.  
+This software is based on Adafruit's SSD1331 OLED Driver library and modified by lawliet zou [wei.zou@seeedstudio.com](wei.zou@seeedstudio.com) for seeed studio. 
 It is licensed under [The BSD License](http://www.freebsd.org/copyright/freebsd-license.html). Check License.txt for more information.<br>
 
 Contributing to this software is warmly welcomed. You can do this basically by [forking](https://help.github.com/articles/fork-a-repo), committing modifications and then [pulling requests](https://help.github.com/articles/using-pull-requests) (follow the links above for operating guide). Adding change log and your contact into file header is encouraged.<br>
