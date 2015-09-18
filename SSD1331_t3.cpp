@@ -216,6 +216,38 @@ void SSD1331_t3::_drawFrame(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, 
   /* */ spi_end(delayNeeded);
 }
 
+void SSD1331_t3::drawCallbackPixels(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t callback(uint16_t x, uint16_t y, void *state), void *state) {
+  uint16_t x, y;
+
+
+  /* */ spi_begin();
+
+  if (x0 >= RGB_OLED_WIDTH)  x0 = RGB_OLED_WIDTH - 1;
+
+  /* */ writecommand16_cont_split(CMD_SET_COLUMN_ADDRESS, x0);
+
+  if (x1 >= RGB_OLED_WIDTH)  x1 = RGB_OLED_WIDTH - 1;
+
+  /* */ writecommand16_cont_split(x1, CMD_SET_ROW_ADDRESS);
+
+  if (y0 >= RGB_OLED_HEIGHT) y0 = RGB_OLED_HEIGHT - 1;
+  if (y1 >= RGB_OLED_HEIGHT) y1 = RGB_OLED_HEIGHT - 1;
+
+  /* */ writecommand16_cont_split(y0, y1);
+
+  for (y = y0; y < y1; y++) {
+    for (x = x0; x <= x1; x++) {
+      writedata16_cont(callback(x, y, state));
+    }
+  }
+  for (x = x0; x < x1; x++) {
+    writedata16_cont(callback(x, y1, state));
+  }
+  writedata16_last(callback(x1, y1, state));
+
+  /* */ spi_end(0);
+}
+
 void SSD1331_t3::copyWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,uint16_t x2, uint16_t y2) {
   int16_t xd, yd, delayNeeded;
 

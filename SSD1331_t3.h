@@ -167,10 +167,6 @@ class SSD1331_t3 : public virtual SGL {
 	void begin(void);
 	void drawPixel(uint16_t x, uint16_t y, uint16_t color);
 
-  void fillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) __attribute__((always_inline)) {
-    _drawFrame(x, y, x + w - 1, y + h - 1, color, color, true);
-  }
-
   void drawLine(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
 
   void drawVerticalLine(uint16_t x, uint16_t y, uint16_t height,uint16_t color) __attribute__((always_inline)) {
@@ -188,6 +184,12 @@ class SSD1331_t3 : public virtual SGL {
   void drawFrame(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t outColor, uint16_t fillColor) __attribute__((always_inline)) {
     _drawFrame(x0, y0, x1, y1, outColor, fillColor, true);
   }
+
+  void fillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) __attribute__((always_inline)) {
+    _drawFrame(x, y, x + w - 1, y + h - 1, color, color, true);
+  }
+
+  void drawCallbackPixels(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t callback(uint16_t x, uint16_t y, void *state), void *state);
   
   /* Custom SSD1331 extensions */
   void copyWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,uint16_t x2, uint16_t y2);
