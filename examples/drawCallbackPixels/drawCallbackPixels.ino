@@ -10,7 +10,7 @@
 */
 
 #include <SGL.h>
-#include "SSD1331_t3.h"
+#include <SSD1331_t3.h>
 #include <SPI.h>
 #include "glowy.h"
 #include "redpanda.h"

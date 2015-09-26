@@ -209,7 +209,11 @@ void SSD1331_t3::_drawFrame(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, 
 
   /* */ writecommand16_cont_split((outColor & 0x3E0) >> 5, outColor & 0x1F);
 
-  delayNeeded = ((xd + 1) * (yd + 1)) / 16;
+  if (filled) {
+    delayNeeded = ((xd + 1) * (yd + 1)) / 16;
+  } else {
+    delayNeeded = (xd + yd + 2) / 8;
+  }
 
   /* */ writecommand16_cont_split((fillColor & 0xF800) >> 11, (fillColor & 0x03E0) >> 5);
   /* */ writecommand8_last(fillColor & 0x1F);

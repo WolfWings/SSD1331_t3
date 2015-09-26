@@ -9,15 +9,16 @@
 */
 
 #include <SGL.h>
-#include <SSD1331.h>
+#include <SSD1331_t3.h>
 #include <SPI.h>
 
-#define cs     A5
-#define dc     3
-#define mosi   16
-#define sclk   15
+#define sclk   13
+#define mosi   11
+#define oc     10
+#define dc     9
+#define rst    8
 
-SSD1331 oled = SSD1331(cs, dc, mosi, sclk);  
+SSD1331_t3 oled = SSD1331_t3(oc, dc, rst, mosi, sclk);
 
 const unsigned char SeeedLogo[] PROGMEM ={
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -73,11 +74,9 @@ const unsigned char SeeedLogo[] PROGMEM ={
 void setup(){
     Serial.begin(9600);
     Serial.println("Start to draw");
-    oled.init();
+    oled.begin();
     oled.fillScreen(COLOR_BLACK);
-    delay(2000);
     oled.drawBitMap(0,0,SeeedLogo,96,64,COLOR_YELLOW);
-    delay(5000);
     Serial.println("start to scoll ...");
     oled.setScolling(Vertical,0,64,0);
 }
